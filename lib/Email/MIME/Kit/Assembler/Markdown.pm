@@ -170,17 +170,18 @@ sub _prep_header {
 sub assemble {
   my ($self, $stash) = @_;
 
-  my $markdown = ${ $self->kit->get_decoded_kit_entry( $self->path ) };
+  my $source = ${ $self->kit->get_decoded_kit_entry( $self->path ) };
+
+  my $markdown;
+
   if ($self->renderer) {
-    my $output_ref = $self->renderer->render(\$markdown, $stash);
+    my $output_ref = $self->renderer->render(\$source, $stash);
     $markdown = $$output_ref;
+  } else {
+    $markdown = $source;
   }
 
   my $plaintext = $markdown;
-
-  if ($self->encode_entities) {
-    $markdown = HTML::Entities::encode_entities($markdown);
-  }
 
   if ($self->munge_signature) {
     my ($body, $sig) = split /^-- $/m, $markdown, 2;
@@ -192,9 +193,24 @@ sub assemble {
   }
 
   my %content = (
-    html => Text::Markdown->new(tab_width => 2)->markdown($markdown),
     text => $plaintext,
   );
+
+  if ($self->encode_entities) {
+    if ($self->renderer) {
+      my $markdown = Text::Markdown->new(tab_width => 2)->markdown($source);
+      my %copy = map {; $_ => HTML::Entities::encode_entities($stash->{$_}) } keys %$stash;
+      my $output_ref = $self->renderer->render(\$markdown, \%copy);
+      $markdown = $$output_ref;
+      $content{html} = $markdown;
+    } else {
+      # Fallback, buggy
+      $markdown = HTML::Entities::encode_entities($markdown);
+      $content{html} = Text::Markdown->new(tab_width => 2)->markdown($markdown),
+    }
+  } else {
+    $content{html} = Text::Markdown->new(tab_width => 2)->markdown($markdown),
+  }
 
   for my $type (keys %content) {
     my $type_wrapper = "$type\_wrapper";
